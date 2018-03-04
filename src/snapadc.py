@@ -54,17 +54,21 @@ class SNAPADC(object):
 	ERROR_FRAME = 4
 	ERROR_RAMP = 5
 
-	def __init__(self, interface, ADC='HMCAD1511', defaultDelayTap=0):
-		# interface => corr.katcp_wrapper.FpgaClient('10.1.0.23')
+	def __init__(self, interface, ADC='HMCAD1511', ref=10, resolution=12):
+		# interface => casperfpga.CasperFpga(hostname/ip)
 
 		self.A_WB_R_LIST = [self.WB_DICT.index(a) for a in self.WB_DICT if a != None]
 		self.adcList = [0, 1, 2]
 		self.ramList = ['adc16_wb_ram0', 'adc16_wb_ram1', 'adc16_wb_ram2']
 		self.laneList = [0, 1, 2, 3, 4, 5, 6, 7]
 
-		self.curDelay = [[defaultDelayTap]*len(self.laneList)]*len(self.adcList)
+		if resolution not in [8,12,14,None]:
+			raise ValueError("Invalid parameter")
 
-		self.lmx = LMX2581(interface,'lmx_ctrl')
+		self.RESOLUTION = resolution
+		self.curDelay = [[0]*len(self.laneList)]*len(self.adcList)
+
+		self.lmx = LMX2581(interface,'lmx_ctrl',ref=ref)
 		self.clksw = HMC922(interface,'adc16_use_synth')
 		self.ram = [WishBoneDevice(interface,name) for name in self.ramList]
 
@@ -83,7 +87,7 @@ class SNAPADC(object):
 		self.p1 = ((pats[0] & mask) << ofst) + (pats[3] & mask)
 		self.p2 = ((pats[1] & mask) << ofst) + (pats[2] & mask)
 
-	def init(self, samplingRate=250, numChannel=4, resolution=None):
+	def init(self, samplingRate=250, numChannel=4):
 		""" Get SNAP ADCs into working condition
 
 		Supported frequency range: 60MHz ~ 1000MHz. Set resolution to
@@ -99,29 +103,12 @@ class SNAPADC(object):
 		5. Testing under dual pattern and ramp mode
 
 		E.g.
-			init(1000,1)	1 channel mode,	1Gsps, 8bit, since 1Gsps
-					is only available in 8bit mode
-			init(320,2)	2 channel mode,	320Msps, 8bit for HMCAD1511,
-					or 12bit for HMCAD1520
-			init(160,4,8)	4 channel mode, 160Msps, 8bit resolution
+			init(1000,1)		1 channel mode,	1Gsps, 8bit, since 1Gsps
+						is only available in 8bit mode
+			init(320,2)		2 channel mode,	320Msps
+			init(160,4)		4 channel mode, 160Msps
 
 		"""
-
-		if resolution not in [8,12,14,None]:
-			raise ValueError("Invalid parameter")
-
-		if resolution>8 and samplingRate/(4/numChannel)>160:
-			raise ValueError("Invalid parameter")
-
-		if resolution==None:
-			if type(self.adc) is HMCAD1511:
-				self.RESOLUTION=8
-			elif samplingRate/(4/numChannel)>160:
-				self.RESOLUTION=8
-			else:
-				self.RESOLUTION=12
-		else:
-			self.RESOLUTION=resolution
 
 		logging.info("Reseting adc_unit")
 		self.reset()
@@ -157,7 +144,7 @@ class SNAPADC(object):
 		if type(self.adc) is HMCAD1511:
 			self.adc.setOperatingMode(numChannel,1,lowClkFreq)
 		elif type(self.adc) is HMCAD1520:
-			self.adc.setOperatingMode(numChannel,1,lowClkFreq,resolution)
+			self.adc.setOperatingMode(numChannel,1,lowClkFreq,self.RESOLUTION)
 
 		self.setDemux()
 
@@ -282,26 +269,27 @@ class SNAPADC(object):
 		"""
 		return self.adc.interleave(data, mode)
 
-	def readRAM(self, ram=None):
+	def readRAM(self, ram=None, signed=True):
 		""" Read RAM(s) and return the 1024-sample data
 
 		E.g.
 			readRAM()		# read all RAMs, return a list of arrays
 			readRAM(1)		# read the 2nd RAMs, return a 128X8 array
 			readRAM([0,1])		# read 2 RAMs, return two arrays
+			readRAM(signed=False)	# return a list of arrays in unsiged format
 		"""
 		if ram==None:						# read all RAMs
-			return self.readRAM(self.adcList)
+			return self.readRAM(self.adcList,signed)
 		elif isinstance(ram, list) and all(r in self.adcList for r in ram):
 									# read a list of RAMs
-			data = [self.readRAM(r) for r in ram if r in self.adcList]
+			data = [self.readRAM(r,signed) for r in ram if r in self.adcList]
 			return dict(zip(ram,data))
 		elif ram in self.adcList:				# read one RAM		
 			if self.RESOLUTION>8:		# ADC_DATA_WIDTH == 16
-				fmt = '!1024h'
+				fmt = '!1024' + ('h' if signed else 'H')
 				length = 2048
 			else:				# ADC_DATA_WIDTH == 8
-				fmt = '!1024b'
+				fmt = '!1024' + ('b' if signed else 'B')
 				length = 1024
 			vals = self.ram[ram]._read(addr=0, size=length)
 			vals = np.array(struct.unpack(fmt,vals)).reshape(-1,8)
@@ -318,6 +306,17 @@ class SNAPADC(object):
 		Reorder the parallelized data by asserting a itslip command to the bitslip 
 		submodule of a ISERDES primitive.  Each bitslip command left shift the 
 		parallelized data by one bit.
+
+		HMCAD1511/HMCAD1520 lane correspondence
+		lane number	lane name in ADC datasheet
+		0		1a
+		1		1b
+		2		2a
+		3		2b
+		4		3a
+		5		3b
+		6		4a
+		7		4b
 
 		E.g.
 			bitslip()		# left shift all lanes of all ADCs

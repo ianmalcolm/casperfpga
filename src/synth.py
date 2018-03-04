@@ -130,12 +130,11 @@ class LMX2581(WishBoneDevice):
 	# http://www.ti.com/lit/ds/symlink/lmx2581.pdf
 	# Also borrow some lines from https://github.com/domagalski/snap-synth
 
-	def __init__(self, interface, controller_name, fosc=10):
+	def __init__(self, interface, controller_name, ref):
 		super(LMX2581, self).__init__(interface, controller_name) 
 		# A non-None address list
 		self.A_DICT_LIST = [self.DICTS.index(a) for a in self.DICTS if a != None]
-		self.FOSC = fosc 		# 10 MHz from GPS module
-		self.freq_pd = self.FOSC / 1
+		self.ref = ref	# reference clock
 
 	def init(self):
 
@@ -222,14 +221,16 @@ class LMX2581(WishBoneDevice):
 
 		self.setWord(1, 'NO_FCAL')
 
-		PLL_N, PLL_NUM, PLL_DEN, VCO_DIV = self.get_osc_values(synth_mhz,self.FOSC)
+		PLL_N, PLL_NUM, PLL_DEN, VCO_DIV = self.get_osc_values(synth_mhz,self.ref)
 
 		# Select the VCO frequency
 		# VCO1: 1800 to 2270 NHz
 		# VCO2: 2135 to 2720 MHz
 		# VCO3: 2610 to 3220 MHz
 		# VCO4: 3075 to 3800 MHz
-		freq_vco = self.freq_pd * (PLL_N + float(PLL_NUM)/PLL_DEN)
+
+		freq_pd = self.ref / 1
+		freq_vco = freq_pd * (PLL_N + float(PLL_NUM)/PLL_DEN)
 		if freq_vco >= 1800 and freq_vco <= 2270:
 			VCO_SEL = 0
 		elif freq_vco >= 2135 and freq_vco <= 2720:
