@@ -114,6 +114,7 @@ if __name__ == '__main__':
         help='The number of frequency channel. Default is 1024.')
     p.add_argument('-f','--frequency',dest='freq',type=float,default=None,
         help='1/2 Nyquist frequency in MHz. If presented, display MHz, instead of channel, as the x axis unit')
+    p.add_argument('-l', '--linear', action='store_true', default=False)
     p.add_argument('-I', '--ninput', dest='nin',type=int, choices=[3,6,12], default=3,
         help='The total number of inputs. Default is 3.')
     p.add_argument('-x', '--xlim', dest='xlim', type=float, nargs=2, metavar=('L_XLIM','U_XLIM'), default=None,
@@ -218,7 +219,10 @@ if __name__ == '__main__':
         for i in range(auto_data.shape[1]):
             label='auto_'+chr(ord('a')+i)+chr(ord('a')+i)+'_amp'
             ydata = np.abs(auto_data[:,i])
-            ax_auto_amp.plot(xaxis,10*np.log10(ydata),label=label)
+            if args.linear:
+                ax_auto_amp.plot(xaxis,ydata,label=label)
+            else:
+                ax_auto_amp.plot(xaxis,10*np.log10(ydata),label=label)
         ax_auto_amp.set_xlabel('Frequency ' + 'in MHz' if args.freq else 'bin')
         ax_auto_amp.set_ylabel('auto-correlation amplitude ' + 'in relative dBm')
         ax_auto_amp.legend(loc=0)
@@ -240,7 +244,10 @@ if __name__ == '__main__':
         ax_cross_amp = fig_cross_amp.add_subplot(111)
         for i in range(cross_data.shape[1]):
             label='cross_'+baselines[i]+'_amp'
-            ax_cross_amp.plot(xaxis,10*np.log10(np.abs(cross_data[:,i])),label=label)
+            if args.linear:
+                ax_cross_amp.plot(xaxis,np.abs(cross_data[:,i]),label=label)
+            else:
+                ax_cross_amp.plot(xaxis,10*np.log10(np.abs(cross_data[:,i])),label=label)
         ax_cross_amp.set_xlabel('Frequency ' + 'in MHz' if args.freq else 'bin')
         ax_cross_amp.set_ylabel('cross-correlation amplitude')
         ax_cross_amp.legend(loc=0)
