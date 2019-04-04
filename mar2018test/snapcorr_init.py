@@ -77,6 +77,7 @@ if __name__ == '__main__':
 		print 'Programming FPGA with bof file {0}...'.format(args.bitstream),
 		sys.stdout.flush()
 		fpga.upload_to_ram_and_program(args.bitstream)
+		time.sleep(1)
 		print 'done'
 	else:
 		print 'Skipped programming FPGA.'

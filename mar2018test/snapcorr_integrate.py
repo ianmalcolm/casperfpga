@@ -25,10 +25,16 @@ if __name__ == '__main__':
     p.add_argument('snap', type=str, metavar="SNAP_IP_OR_HOSTNAME")
     p.add_argument('-n', '--nchannel', dest='nch',type=int, default=1024,
         help='The number of frequency channel. Default is 1024.')
-    p.add_argument('-l', '--len', type=int, default=1,
+    p.add_argument('--soft', type=int, default=1,
         help='Software integration length')
+    p.add_argument('--hard', type=int,
+        help='Hardware integration length, E.g. 244140')
     p.add_argument('--linear', action='store_true', default=False,
         help='Plot curve linearly')
+    p.add_argument('-p', '--plot', nargs='?', type=str, default=None, const='display',
+        help='Plot figure')
+    p.add_argument('--dump', nargs='?', type=str, default=None, const='spectrum.txt',
+        help='Save data to file')
     args = p.parse_args()
 
     print('Connecting to server {0}... '.format(args.snap)),
@@ -40,6 +46,10 @@ if __name__ == '__main__':
     else:
         print 'ERROR connecting to server {0}.'.format(snap)
         sys.exit()
+
+    if args.hard:
+        print('Configuring accumulation period with {}.'.format(args.hard))
+        fpga.write_int('acc_len',args.hard)
 
     clk = fpga.estimate_fpga_clock()
     acc_len = fpga.read_uint('acc_len')
@@ -56,7 +66,7 @@ if __name__ == '__main__':
 
     # print auto-correlation
     print('Collecting auto-correlation data...')
-    for i in range(args.len):
+    for i in range(args.soft):
         while acc_num_curr == acc_num_prev:
             time.sleep(acc_len_in_sec / 2)
             acc_num_curr = fpga.read_uint('acc_num')
@@ -66,6 +76,9 @@ if __name__ == '__main__':
         db += get_auto_data(fpga, 'bb' ,args.nch)
         dc += get_auto_data(fpga, 'cc' ,args.nch)
 
+    if args.dump:
+        data_to_file = np.asarray([xaxis,da,db,dc]).T
+        np.savetxt(args.dump, data_to_file)
 
     print('Ploting auto-correlation...')
 
@@ -85,11 +98,16 @@ if __name__ == '__main__':
         ax.plot(xaxis,10*np.log10(dc),label='cc')
         ax.set_ylabel('auto-correlation' + 'in relative dBm')
     
-    sw_acc_len_in_sec = round(acc_len_in_sec * args.len, 2)
+    sw_acc_len_in_sec = round(acc_len_in_sec * args.soft, 2)
 
     ax.set_xlabel('Frequency in MHz')
-    ax.set_title('hw int {}s, sw int {}s.'.format(acc_len_in_sec, sw_acc_len_in_sec))
+    ax.set_title('hw int {}s, total int {}s.'.format(acc_len_in_sec, sw_acc_len_in_sec))
     ax.legend(loc=0)
     plt.autoscale(enable=True,axis='both')
-    plt.show()
+
+    if args.plot:
+        if args.plot=='display':
+            plt.show()
+        else:
+            plt.savefig(args.plot, dpi=300)
 
