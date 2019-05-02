@@ -6,37 +6,45 @@ import numpy as np,time,logging,struct,random,sys,argparse
 
 logger = logging.getLogger(__name__)
 
+def number(s):
+    if s.startswith('0b'):
+        val=int(s,2)
+    elif s.startswith('0x'):
+        val=int(s,16)
+    else:
+        val=int(s)
+    return val
+
 if __name__ == "__main__":
 
     p = argparse.ArgumentParser(description='Test FEM module. Use this script when RPI directly connects to Full Control Breakout board for HERA. Before trying this script, please install pigpio and run sudo pigpiod.',
 epilog="""Examples:
-python rpi_sensor_fem.py 10.1.0.23 --i2c i2c_ant1 --gpio
-python rpi_sensor_fem.py 10.1.0.23 --i2c i2c_ant1 --gpio 0xff
-python rpi_sensor_fem.py 10.1.0.23 --i2c i2c_ant1 --rom
-python rpi_sensor_fem.py 10.1.0.23 --i2c i2c_ant1 --rom 'Hello world!'
-python rpi_sensor_fem.py 10.1.0.23 --i2c i2c_ant1 --volt
-python rpi_sensor_fem.py 10.1.0.23 --i2c i2c_ant1 --temp
-python rpi_sensor_fem.py 10.1.0.23 --i2c i2c_ant1 --bar
-python rpi_sensor_fem.py 10.1.0.23 --i2c i2c_ant1 --imu
-python rpi_sensor_fem.py 10.1.0.23 --i2c i2c_ant1 --switch
-python rpi_sensor_fem.py 10.1.0.23 --i2c i2c_ant1 --switch noise
-python rpi_sensor_fem.py 10.1.0.23 --i2c i2c_ant1 --phase
-python rpi_sensor_fem.py 10.1.0.23 --i2c i2c_ant1 --phase 0b111111""",
+python rpi_sensor_fem.py --i2c 1 10000 --gpio
+python rpi_sensor_fem.py --i2c 1 10000 --gpio 0xff
+python rpi_sensor_fem.py --i2c 1 10000 --rom
+python rpi_sensor_fem.py --i2c 1 10000 --rom 'Hello world!'
+python rpi_sensor_fem.py --i2c 1 10000 --volt
+python rpi_sensor_fem.py --i2c 1 10000 --temp
+python rpi_sensor_fem.py --i2c 1 10000 --bar
+python rpi_sensor_fem.py --i2c 1 10000 --imu
+python rpi_sensor_fem.py --i2c 1 10000 --switch
+python rpi_sensor_fem.py --i2c 1 10000 --switch noise""",
 formatter_class=argparse.RawDescriptionHelpFormatter)
 
-    p.add_argument('rpi', type=str, metavar="RPI_IP_OR_HOSTNAME")
-    p.add_argument('--i2c', dest='i2c', nargs=1, metavar=('I2C_NAME'), default=['i2c_ant1'], choices=['i2c_ant1','i2c_ant2','i2c_ant3'],
-                help='Specify the name of the i2c bus.')
-    p.add_argument('--rom',nargs='*',metavar=('TEXT'), help='Test EEPROM. Leave parameter empty to read ROM. Add text to write ROM.')
-    p.add_argument('--temp',action='store_true', default=False,help='Print temperature and ID.')
-    p.add_argument('--volt',action='store_true', default=False, help='Print current.')
-    p.add_argument('--bar',nargs='*',metavar=('AVERAGE','INTERVAL'), help='Print air pressure, temperature and height, averaging over multiple measurements.')
-    p.add_argument('--imu',action='store_true', default=False,help='Print FEM pose')
-    #p.add_argument('--gpio',nargs='*',metavar=('VALUE'), help='Test GPIO. Leave parameter empty to read gpio. Add value to write gpio.')
+    p.add_argument('--i2c', dest='i2c', type=int, metavar=('I2C_NAME'), choices=[1,2,3], required=True,
+                help='Specify the name the i2c bus.')
+    p.add_argument('--baud', dest='baud', type=int, metavar=('I2C_BAUD_RATE'), default=10000,
+                help='Specify the baud rate of the i2c bus.')
+    p.add_argument('--rom', nargs='?', metavar=('TEXT'), const='', help='Test EEPROM. Leave parameter empty to read ROM. Add text to write ROM.')
+    p.add_argument('--temp', action='store_true', default=False, help='Print temperature.')
+    p.add_argument('--sn', action='store_true', default=False, help='Print ID inside temperature sensor')
+    p.add_argument('--volt', action='store_true', default=False, help='Print shunt voltage, shunt current and bus voltage.')
+    p.add_argument('--bar', action='store_true', default=False, help='Print air pressure, temperature and height and calibrated height.')
+    p.add_argument('--imu', action='store_true', default=False, help='Print FEM pose, that is theta and phi value')
+    p.add_argument('--probe', action='store_true', default=False, help='Detect devices on the bus')
     g=p.add_mutually_exclusive_group()
-    g.add_argument('--gpio',nargs='*',metavar=('VALUE'), help='Test GPIO. Leave parameter empty to read gpio. Add value to write gpio.')
-    g.add_argument('--switch',nargs='*',metavar=('MODE'), choices=['antenna','noise','load'], help='Switch FEM input to antenna, noise source or 50 ohm load. Choices are load, antenna, and noise.')
-    p.add_argument('--phase',nargs='*',metavar=('DIRECTION','VALUE'), help='Get/set phase switches. Use 6-bit number to set phase switches. i2c_ant1_phs_x at offset 5, i2c_ant3_phs_y at offset 0. You can set the phase switches of the antenna 2 and 3 together even if you pass --i2c with i2c_ant1.')
+    g.add_argument('--gpio', nargs='?', const=-1, type=number, metavar=('VALUE'), help='Test GPIO. Leave parameter empty to read gpio. Add value to write gpio.')
+    g.add_argument('--switch',nargs='?', type=str, const='', metavar=('MODE'), choices=['', 'antenna','noise','load'], help='Switch FEM input to antenna, noise source or 50 ohm load. Choices are load, antenna, and noise.')
     args = p.parse_args()
 
     #      0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f
@@ -62,7 +70,6 @@ formatter_class=argparse.RawDescriptionHelpFormatter)
     GPIO_PAM_ADDR = 0x21
     GPIO_FEM_ADDR = 0x20    #
 
-    I2C_BAUD_RATE = 10000
     ANT1_I2C_GPIO_SDA_PIN = 4
     ANT1_I2C_GPIO_SCL_PIN = 14
     ANT2_I2C_GPIO_SDA_PIN = 6
@@ -71,94 +78,62 @@ formatter_class=argparse.RawDescriptionHelpFormatter)
     ANT3_I2C_GPIO_SCL_PIN = 26
 
     # RPI I2C interface
-    i2cmap = {  'i2c_ant1':[ANT1_I2C_GPIO_SDA_PIN,ANT1_I2C_GPIO_SCL_PIN],
-                'i2c_ant2':[ANT2_I2C_GPIO_SDA_PIN,ANT2_I2C_GPIO_SCL_PIN],
-                'i2c_ant3':[ANT3_I2C_GPIO_SDA_PIN,ANT3_I2C_GPIO_SCL_PIN]}
-    assert args.i2c[0] in i2cmap.keys()
-    bus=i2c.I2C_PIGPIO(i2cmap[args.i2c[0]][0],i2cmap[args.i2c[0]][1],I2C_BAUD_RATE)
+    i2clist = [[ANT1_I2C_GPIO_SDA_PIN,ANT1_I2C_GPIO_SCL_PIN],
+               [ANT2_I2C_GPIO_SDA_PIN,ANT2_I2C_GPIO_SCL_PIN],
+               [ANT3_I2C_GPIO_SDA_PIN,ANT3_I2C_GPIO_SCL_PIN]]
+    bus = i2c.I2C_PIGPIO(i2clist[args.i2c-1][0], i2clist[args.i2c-1][1], args.baud)
 
     if args.imu:
         imu = i2c_motion.IMUSimple(bus,ACCEL_ADDR,orient=[[0,0,1],[1,1,0],[-1,1,0]])
         imu.init()
-        theta,phi = imu.pose
-        print('IMU theta: {}, phi: {}'.format(theta,phi))
+        theta, phi = imu.pose
+        print('{}, {}'.format(theta,phi))
         imu.mpu.powerOff()
 
     if args.temp:
         temp = i2c_temp.Si7051(bus,TEMP_ADDR)
         t = temp.readTemp()
+        print(t)
+
+    if args.sn:
+        temp = i2c_temp.Si7051(bus,TEMP_ADDR)
         sn=temp.sn()
-        print('Temperature: {}, serial number: {}'.format(t,sn))
+        print(sn)
 
     if args.switch!=None:
-        smode = {'load':0b000,'antenna':0b110,'noise':0b001}
         gpio=i2c_gpio.PCF8574(bus,GPIO_FEM_ADDR)
-        if len(args.switch)>0:
-            key = args.switch[0]
-            val = smode[key]
-            print('write value {:#05b} to GPIO. ({} mode)'.format(val, key))
-            gpio.write(val)
-        else:
+        if args.switch=='':
+            smode = {0b000:'load',0b111:'antenna', 0b001:'noise'}
             val=gpio.read()
-            key = 'Unknown'
-            for name,value in smode.iteritems():
-                if val&0b111 == value:
-                    key = name
-            print('read GPIO value: {:#05b}. ({} mode)'.format(val&0b111,key))
+            if val in smode:
+                print(smode[val])
+            else:
+                print('Unknown')
+        else:
+            smode = {'load':0b000,'antenna':0b111,'noise':0b001}
+            gpio.write(smode[args.switch])
     elif args.gpio!=None:
         gpio=i2c_gpio.PCF8574(bus,GPIO_FEM_ADDR)
-        if len(args.gpio)>0:
-            if args.gpio[0].startswith('0b'):
-                val=int(args.gpio[0],2)
-            elif args.gpio[0].startswith('0x'):
-                val=int(args.gpio[0],16)
-            else:
-                val=int(args.gpio[0])
-            print('write value {} to GPIO'.format(val))
-            gpio.write(val)
-        else:
+        if args.gpio<0:
             val=gpio.read()
-            print('read GPIO value: {}'.format(val))
+            print('0b{:08b}'.format(val))
+        else:
+            gpio.write(args.gpio)
 
     if args.rom!=None:
         rom=i2c_eeprom.EEP24XX64(bus,ROM_FEM_ADDR)
-        if len(args.rom)>0:
-            text=args.rom[0]
-            print('write text to EEPROM: {}'.format(text))
-            rom = rom.writeString(text)
+        if args.rom=='':
+            print(rom.readString())
         else:
-            text = rom.readString()
-            print('read EEPROM test: {}'.format(text))
+            rom.writeString(args.rom)
 
-    if args.bar!=None:
-        if len(args.bar)>0:
-            n=int(args.bar[0])
-            delay=float(args.bar[1])
-            avg_t = 0
-            avg_p = 0
-            avg_a = 0
-            for i in range(n):
-                bar = i2c_bar.MS5611_01B(bus,BAR_ADDR)
-                bar.init()
-                rawt,dt = bar.readTemp(raw=True)
-                press = bar.readPress(rawt,dt)
-                alt = bar.toAltitude(press,rawt/100.)
-                print('\tBarometer temperature: {}, air pressure: {}, altitude: {}'.format(rawt/100.,press,alt))
-                print('\t\tCalibrated altitude: {}'.format(alt-0.16))
-                avg_t += (rawt/100./n)
-                avg_p += (press*1./n)
-                avg_a += (alt*1./n)
-                time.sleep(delay)
-            print('Averaged barometer temperature: {}, air pressure: {}, altitude: {}'.format(avg_t,avg_p,avg_a))
-            print('\t\tCalibrated altitude: {}'.format(avg_a-0.16))
-        else:
-            bar = i2c_bar.MS5611_01B(bus,BAR_ADDR)
-            bar.init()
-            rawt,dt = bar.readTemp(raw=True)
-            press = bar.readPress(rawt,dt)
-            alt = bar.toAltitude(press,rawt/100.)
-            print('Barometer temperature: {}, air pressure: {}, altitude: {}'.format(rawt/100.,press,alt))
-            print('\t\tCalibrated altitude: {}'.format(alt-0.16))
+    if args.bar:
+        bar = i2c_bar.MS5611_01B(bus,BAR_ADDR)
+        bar.init()
+        rawt,dt = bar.readTemp(raw=True)
+        press = bar.readPress(rawt,dt)
+        alt = bar.toAltitude(press,rawt/100.)
+        print('{},{},{},{}'.format(rawt/100.,press,alt,alt-0.16))
 
     if args.volt:
         # full scale 909mA
@@ -167,45 +142,7 @@ formatter_class=argparse.RawDescriptionHelpFormatter)
         vshunt = ina.readVolt('shunt')
         vbus = ina.readVolt('bus')
         res = 0.1
-        print('Shunt voltage: {} V, current: {} A, bus voltage: {} V'.format(vshunt,vshunt/res,vbus))
+        print('{},{},{}'.format(vshunt,vshunt/res,vbus))
 
-    if args.phase!=None:
-        ANT1_PHS_X = 15
-        ANT1_PHS_Y = 5
-        ANT2_PHS_X = 13
-        ANT2_PHS_Y = 19
-        ANT3_PHS_X = 20
-        ANT3_PHS_Y = 21
-        import pigpio
-        pi = pigpio.pi()
-
-        # Write phase swtich register
-        if len(args.phase)==1:
-            if args.phase[0].startswith('0b'):
-                val=int(args.phase[0],2)&0b111111
-            elif args.phase[0].startswith('0x'):
-                val=int(args.phase[0],16)&0b111111
-            else:
-                val=int(args.phase[0])&0b111111
-            print('Write {:#08b} to phase switch register. Here are the results:'.format(val))
-            pi.write(ANT1_PHS_X,(val&0b100000)>>5)
-            pi.write(ANT1_PHS_Y,(val&0b010000)>>4)
-            pi.write(ANT2_PHS_X,(val&0b001000)>>3)
-            pi.write(ANT2_PHS_Y,(val&0b000100)>>2)
-            pi.write(ANT3_PHS_X,(val&0b000010)>>1)
-            pi.write(ANT3_PHS_Y,(val&0b000001)>>0)
-
-        # Read phase switch register
-        val = 0b0 | (pi.read(ANT1_PHS_X)<<5)
-        val = val | (pi.read(ANT1_PHS_Y)<<4)
-        val = val | (pi.read(ANT2_PHS_X)<<3)
-        val = val | (pi.read(ANT2_PHS_Y)<<2)
-        val = val | (pi.read(ANT3_PHS_X)<<1)
-        val = val | (pi.read(ANT3_PHS_Y)<<0)
-
-        phsmap = {  'i2c_ant1':[5,4],
-                    'i2c_ant2':[3,2],
-                    'i2c_ant3':[1,0]}
-
-        for key,offs in phsmap.iteritems():
-            print('{},\tX:{},\tY:{}'.format(key,(val>>offs[0])&0b1,(val>>offs[1])&0b1))
+    if args.probe:
+        bus.probe()

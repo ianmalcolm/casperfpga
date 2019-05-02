@@ -31,7 +31,7 @@ if __name__ == '__main__':
         help='Hardware integration length, E.g. 244140')
     p.add_argument('--linear', action='store_true', default=False,
         help='Plot curve linearly')
-    p.add_argument('-p', '--plot', nargs='?', type=str, default=None, const='display',
+    p.add_argument('-p', '--plot', nargs='?', type=str, default=None, const='',
         help='Plot figure')
     p.add_argument('--dump', nargs='?', type=str, default=None, const='spectrum.txt',
         help='Save data to file')
@@ -55,8 +55,8 @@ if __name__ == '__main__':
     acc_len = fpga.read_uint('acc_len')
     acc_len_in_sec = round(acc_len * (args.nch/2) / clk / 1e6, 2)
     print('Hardware integration length: {} seconds.'.format(acc_len_in_sec))
-    acc_num_prev = fpga.read_uint('acc_num')
-    acc_num_curr = acc_num_prev
+    acc_num_curr = fpga.read_uint('acc_num')
+    acc_num_prev = 0
 
     xaxis = np.arange(0, clk*4/2, clk*4/2 / args.nch)
 
@@ -105,8 +105,8 @@ if __name__ == '__main__':
     ax.legend(loc=0)
     plt.autoscale(enable=True,axis='both')
 
-    if args.plot:
-        if args.plot=='display':
+    if args.plot is not None:
+        if args.plot=='':
             plt.show()
         else:
             plt.savefig(args.plot, dpi=300)

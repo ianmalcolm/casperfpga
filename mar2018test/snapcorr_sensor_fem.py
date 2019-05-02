@@ -33,7 +33,7 @@ python snapcorr_sensor_fem.py 10.1.0.23 --i2c i2c_ant1 --phase 0b111111""",
     p.add_argument('--volt',action='store_true', default=False, help='Print current.')
     p.add_argument('--bar',nargs='*',metavar=('AVERAGE','INTERVAL'), help='Print air pressure, temperature and height, averaging over multiple measurements.')
     p.add_argument('--imu',action='store_true', default=False,help='Print FEM pose')
-    #p.add_argument('--gpio',nargs='*',metavar=('VALUE'), help='Test GPIO. Leave parameter empty to read gpio. Add value to write gpio.')
+    p.add_argument('--probe',action='store_true', default=False, help='Detect all slave devices')
     g=p.add_mutually_exclusive_group()
     g.add_argument('--gpio',nargs='*',metavar=('VALUE'), help='Test GPIO. Leave parameter empty to read gpio. Add value to write gpio.')
     g.add_argument('--switch',nargs='*',metavar=('MODE'), choices=['antenna','noise','load'], help='Switch FEM input to antenna, noise source or 50 ohm load. Choices are load, antenna, and noise.')
@@ -181,4 +181,8 @@ python snapcorr_sensor_fem.py 10.1.0.23 --i2c i2c_ant1 --phase 0b111111""",
         val = fpga.read_uint('phs_reg')
         for key,offs in phsmap.iteritems():
             print('{},\tX:{},\tY:{}'.format(key,(val>>offs[0])&0b1,(val>>offs[1])&0b1))
+
+
+    if args.probe:
+        bus.probe()
 

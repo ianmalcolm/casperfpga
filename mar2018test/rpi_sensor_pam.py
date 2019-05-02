@@ -27,29 +27,41 @@ def dc2dbm(val):
     res = val * slope + intercept
     return res
 
+def number(s):
+    if s.startswith('0b'):
+        val=int(s,2)
+    elif s.startswith('0x'):
+        val=int(s,16)
+    else:
+        val=int(s)
+    return val
+
 if __name__ == "__main__":
 
     p = argparse.ArgumentParser(description='Test PAM module. Use this script when RPI directly connects to Full Control Breakout board for HERA. Before trying this script, please install pigpio first on your raspberry pi and run sudo pigpiod.',
 epilog="""Examples:
-python rpi_sensor_pam.py 10.1.0.23 --i2c i2c_ant1 --atten
-python rpi_sensor_pam.py 10.1.0.23 --i2c i2c_ant1 --atten 7 13
-python rpi_sensor_pam.py 10.1.0.23 --i2c i2c_ant1 --gpio
-python rpi_sensor_pam.py 10.1.0.23 --i2c i2c_ant1 --gpio 0xff
-python rpi_sensor_pam.py 10.1.0.23 --i2c i2c_ant1 --rom
-python rpi_sensor_pam.py 10.1.0.23 --i2c i2c_ant1 --rom 'Hello world!'
-python rpi_sensor_pam.py 10.1.0.23 --i2c i2c_ant1 --volt
-python rpi_sensor_pam.py 10.1.0.23 --i2c i2c_ant1 --id""",
+python rpi_sensor_pam.py --i2c 1 --atten
+python rpi_sensor_pam.py --i2c 1 --atten 7 13
+python rpi_sensor_pam.py --i2c 1 --gpio
+python rpi_sensor_pam.py --i2c 1 --gpio 0xff
+python rpi_sensor_pam.py --i2c 1 --rom
+python rpi_sensor_pam.py --i2c 1 --rom 'Hello world!'
+python rpi_sensor_pam.py --i2c 1 --volt
+python rpi_sensor_pam.py --i2c 1 --id""",
 formatter_class=argparse.RawDescriptionHelpFormatter)
 
-    p.add_argument('rpi', type=str, metavar="RPI_IP_OR_HOSTNAME")
-    p.add_argument('--i2c', dest='i2c', nargs=1, metavar=('I2C_NAME'), default=['i2c_ant1'], choices=['i2c_ant1','i2c_ant2','i2c_ant3'],
-                help='Specify the name of the i2c bus.')
-    p.add_argument('--rom',nargs='*',metavar=('TEXT'), help='Test EEPROM. Leave parameter empty to read ROM. Add text to write ROM.')
+    p.add_argument('--i2c', dest='i2c', type=int, metavar=('I2C_NAME'), choices=[1,2,3], required=True,
+                help='Specify the name the i2c bus.')
+    p.add_argument('--baud', dest='baud', type=int, metavar=('I2C_BAUD_RATE'), default=10000,
+                help='Specify the baud rate of the i2c bus.')
+    p.add_argument('--rom', nargs='?', metavar=('TEXT'), const='', help='Test EEPROM. Leave parameter empty to read ROM. Add text to write ROM.')
     p.add_argument('--id',action='store_true', default=False,help='Print ID.')
-    p.add_argument('--volt',action='store_true', default=False, help='Print voltimeter.')
+    p.add_argument('--volt', action='store_true', default=False, help='Print shunt voltage, shunt current and bus voltage.')
+    p.add_argument('--power',action='store_true', default=False, help='Print East and North power in dBm.')
+    p.add_argument('--probe', action='store_true', default=False, help='Detect devices on the bus')
     g=p.add_mutually_exclusive_group()
-    g.add_argument('--gpio',nargs='*',metavar=('VALUE'), help='Test GPIO. Leave parameter empty to read gpio. Add value to write gpio.')
-    g.add_argument('--atten',nargs='*',metavar=('EAST','NORTH'), help='Specify attenuation of East and North pole, 0-15 dB with 1 dB step. Leave parameter empty to read attenuation.')
+    g.add_argument('--gpio', nargs='?', const=-1, type=number, metavar=('VALUE'), help='Test GPIO. Leave parameter empty to read gpio. Add value to write gpio.')
+    g.add_argument('--atten', nargs='*', metavar=('EAST','NORTH'), help='Specify attenuation of East and North pole, 0-15 dB with 1 dB step. Leave parameter empty to read attenuation.')
     args = p.parse_args()
 
     #      0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f
@@ -75,7 +87,6 @@ formatter_class=argparse.RawDescriptionHelpFormatter)
     GPIO_PAM_ADDR = 0x21
     GPIO_FEM_ADDR = 0x20
 
-    I2C_BAUD_RATE = 10000
     ANT1_I2C_GPIO_SDA_PIN = 4
     ANT1_I2C_GPIO_SCL_PIN = 14
     ANT2_I2C_GPIO_SDA_PIN = 6
@@ -84,11 +95,10 @@ formatter_class=argparse.RawDescriptionHelpFormatter)
     ANT3_I2C_GPIO_SCL_PIN = 26
 
     # RPI I2C interface
-    i2cmap = {  'i2c_ant1':[ANT1_I2C_GPIO_SDA_PIN,ANT1_I2C_GPIO_SCL_PIN],
-                'i2c_ant2':[ANT2_I2C_GPIO_SDA_PIN,ANT2_I2C_GPIO_SCL_PIN],
-                'i2c_ant3':[ANT3_I2C_GPIO_SDA_PIN,ANT3_I2C_GPIO_SCL_PIN]}
-    assert args.i2c[0] in i2cmap.keys()
-    bus=i2c.I2C_PIGPIO(i2cmap[args.i2c[0]][0],i2cmap[args.i2c[0]][1],I2C_BAUD_RATE)
+    i2clist = [[ANT1_I2C_GPIO_SDA_PIN,ANT1_I2C_GPIO_SCL_PIN],
+               [ANT2_I2C_GPIO_SDA_PIN,ANT2_I2C_GPIO_SCL_PIN],
+               [ANT3_I2C_GPIO_SDA_PIN,ANT3_I2C_GPIO_SCL_PIN]]
+    bus = i2c.I2C_PIGPIO(i2clist[args.i2c-1][0], i2clist[args.i2c-1][1], args.baud)
 
     if args.id:
         sn=i2c_sn.DS28CM00(bus,SN_ADDR)
@@ -100,51 +110,41 @@ formatter_class=argparse.RawDescriptionHelpFormatter)
         if len(args.atten)>0:
             ve=int(args.atten[0])
             vn=int(args.atten[1])
-            print('Set {}dB to East attenuator, {}dB to North attenuator'.format(ve,vn))
             gpio.write(db2gpio(ve,vn))
         else:
             val=gpio.read()
             ve,vn=gpio2db(val)
-            print('read attenuation value: East {}dB, North {}dB'.format(ve,vn))
-
+            print('{}, {}'.format(ve,vn))
     elif args.gpio!=None:
         gpio=i2c_gpio.PCF8574(bus,GPIO_PAM_ADDR)
-        if len(args.gpio)>0:
-            if args.gpio[0].startswith('0b'):
-                val=int(args.gpio[0],2)
-            elif args.gpio[0].startswith('0x'):
-                val=int(args.gpio[0],16)
-            else:
-                val=int(args.gpio[0])
-            print('write value {} to GPIO'.format(val))
-            gpio.write(val)
+        if args.gpio<0:
+            print('0b{:08b}'.format(gpio.read()))
         else:
-            val=gpio.read()
-            print('read GPIO value: {}'.format(val))
+            gpio.write(args.gpio)
 
     if args.rom!=None:
         rom=i2c_eeprom.EEP24XX64(bus,ROM_PAM_ADDR)
-        if len(args.rom)>0:
-            text=args.rom[0]
-            print('write text to EEPROM: {}'.format(text))
-            rom = rom.writeString(text)
+        if args.rom=='':
+            print(rom.readString())
         else:
-            text = rom.readString()
-            print('read EEPROM test: {}'.format(text))
+            rom.writeString(args.rom)
 
-    if args.volt:
+    if args.power:
         volt=i2c_volt.MAX11644(bus,VOLT_PAM_ADDR)
         volt.init()
         vp1,vp2=volt.readVolt()
         loss = 9.8
-        print('East voltage: {} V, power level: {} dBm, calibrated power {} dBm'.format(vp1,dc2dbm(vp1), dc2dbm(vp1)+loss))
-        print('North voltage: {} V, power level: {} dBm, calibrated power {} dBm'.format(vp2,dc2dbm(vp2), dc2dbm(vp1)+loss))
+        print('{},{},{}'.format(vp1,dc2dbm(vp1), dc2dbm(vp1)+loss))
+        print('{},{},{}'.format(vp2,dc2dbm(vp2), dc2dbm(vp1)+loss))
 
+    if args.volt:
         # full scale 909mA
         ina=i2c_volt.INA219(bus,INA_ADDR)
         ina.init()
         vshunt = ina.readVolt('shunt')
         vbus = ina.readVolt('bus')
         res = 0.1
-        print('Shunt voltage: {} V, Current: {} A, bus voltage: {} V'.format(vshunt,vshunt/res,vbus))
+        print('{},{},{}'.format(vshunt,vshunt/res,vbus))
 
+    if args.probe:
+        bus.probe()

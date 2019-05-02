@@ -48,6 +48,7 @@ formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument('--rom',nargs='*',metavar=('TEXT'), help='Test EEPROM. Leave parameter empty to read ROM. Add text to write ROM.')
     p.add_argument('--id',action='store_true', default=False,help='Print ID.')
     p.add_argument('--volt',action='store_true', default=False, help='Print voltimeter.')
+    p.add_argument('--probe',action='store_true', default=False, help='Detect all slave devices.')
     g=p.add_mutually_exclusive_group()
     g.add_argument('--gpio',nargs='*',metavar=('VALUE'), help='Test GPIO. Leave parameter empty to read gpio. Add value to write gpio.')
     g.add_argument('--atten',nargs='*',metavar=('EAST','NORTH'), help='Specify attenuation of East and North pole, 0-15 dB with 1 dB step. Leave parameter empty to read attenuation.')
@@ -140,4 +141,8 @@ formatter_class=argparse.RawDescriptionHelpFormatter)
         vbus = ina.readVolt('bus')
         res = 0.1
         print('Shunt voltage: {} V, Current: {} A, bus voltage: {} V'.format(vshunt,vshunt/res,vbus))
+
+
+    if args.probe:
+        bus.probe()
 
