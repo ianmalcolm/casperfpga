@@ -30,13 +30,15 @@ python snapcorr_sensor_fem.py 10.1.0.23 --i2c i2c_ant1 --phase 0b111111""",
                 help='Specify the name of the i2c bus. Initialise I2C devices if baud rate and reference clock are provided.')
     p.add_argument('--rom',nargs='*',metavar=('TEXT'), help='Test EEPROM. Leave parameter empty to read ROM. Add text to write ROM.')
     p.add_argument('--temp',action='store_true', default=False,help='Print temperature and ID.')
+    p.add_argument('--humidity',action='store_true', default=False,help='Print humidity in percentage.')
     p.add_argument('--volt',action='store_true', default=False, help='Print current.')
+    p.add_argument('--id',action='store_true', default=False, help='Print id.')
     p.add_argument('--bar',nargs='*',metavar=('AVERAGE','INTERVAL'), help='Print air pressure, temperature and height, averaging over multiple measurements.')
     p.add_argument('--imu',action='store_true', default=False,help='Print FEM pose')
     p.add_argument('--probe',action='store_true', default=False, help='Detect all slave devices')
     g=p.add_mutually_exclusive_group()
     g.add_argument('--gpio',nargs='*',metavar=('VALUE'), help='Test GPIO. Leave parameter empty to read gpio. Add value to write gpio.')
-    g.add_argument('--switch',nargs='*',metavar=('MODE'), choices=['antenna','noise','load'], help='Switch FEM input to antenna, noise source or 50 ohm load. Choices are load, antenna, and noise.')
+    g.add_argument('--switch',nargs='*',choices=['antenna','noise','load','easton','eastoff','northon','northoff'],metavar=('MODE'), help='Switch FEM input to antenna, noise source or 50 ohm load. Choices are load, antenna, and noise.')
     g.add_argument('--phase',nargs='*',metavar=('DIRECTION','VALUE'), help='Get/set phase switch. Use 6-bit number to set phase switches. i2c_ant1_phs_x at offset 5, i2c_ant3_phs_y at offset 0.')
     args = p.parse_args()
 
@@ -78,27 +80,54 @@ python snapcorr_sensor_fem.py 10.1.0.23 --i2c i2c_ant1 --phase 0b111111""",
         print('IMU theta: {}, phi: {}'.format(theta,phi))
         imu.mpu.powerOff()
 
+    if args.id:
+        temp = i2c_temp.Si7051(bus,TEMP_ADDR)
+        sn=temp.sn()
+        print('Serial number: {}'.format(sn))
+
     if args.temp:
         temp = i2c_temp.Si7051(bus,TEMP_ADDR)
-        t = temp.readTemp()
-        sn=temp.sn()
-        print('Temperature: {}, serial number: {}'.format(t,sn))
+        rh, t = temp.read()
+        print('Relative humidity: {}, Temperature: {}'.format(rh, t))
+
+    if args.humidity:
+        humidity = i2c_temp.Si7021(bus,TEMP_ADDR)
+        rh, t = temp.read()
+        print('Relative humidity: {}'.format(rh))
 
     if args.switch!=None:
-        smode = {'load':0b000,'antenna':0b111,'noise':0b001}
+
+        smode = {   'load':0b000,'antenna':0b111,'noise':0b001, }
+        smode_rev = {   0b000:'load', 0b111:'antenna', 0b001:'noise', }
+        spower = {'easton':0b10000,'eastoff':0b0,
+                     'northon':0b01000, 'northoff':0b0,}
+        spower_rev = {  0b10000:'east on, north off',
+                        0b11000:'east on, north on',
+                        0b01000:'east off, north on',
+                        0b00000:'east off, north off', }
         gpio=i2c_gpio.PCF8574(bus,GPIO_FEM_ADDR)
+        val=gpio.read()
+
         if len(args.switch)>0:
-            key = args.switch[0]
-            val = smode[key]
-            print('write value {:#05b} to GPIO. ({} mode)'.format(val, key))
+            if args.switch[0] in smode:
+                val = val & 0b11111000 | smode.get(args.switch[0])
+            elif args.switch[0] in spower:
+                if 'east' in args.switch[0]:
+                    val = (val & 0b11101111) + spower[args.switch[0]]
+                elif 'north' in args.switch[0]:
+                    val = (val & 0b11110111) + spower[args.switch[0]]
+                else:
+                    raise ValueError('Invalid parameters.')
+
             gpio.write(val)
+            mode = smode_rev.get(val&0b111, 'Unknown switch mode')
+            power = spower_rev.get(val&0b11000, 'Unknown power status')
+            print('write value 0b{:#08b} to GPIO. ({} mode). ({})'.format(val, mode, power))
         else:
-            val=gpio.read()
-            key = 'Unknown'
-            for name,value in smode.iteritems():
-                if val&0b111 == value:
-                    key = name
-            print('read GPIO value: {:#05b}. ({} mode)'.format(val&0b111,key))
+            mode = smode_rev.get(val&0b111, 'Unknown switch mode')
+            power = spower_rev.get(val&0b11000, 'Unknown power status')
+            print('read GPIO value: 0b{:#08b}. ({} mode). ({})'.format(val, mode, power))
+
     elif args.gpio!=None:
         gpio=i2c_gpio.PCF8574(bus,GPIO_FEM_ADDR)
         if len(args.gpio)>0:
